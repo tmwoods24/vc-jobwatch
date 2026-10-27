@@ -28,12 +28,12 @@ specific you are about what you want and don't want, the better the scores.
      an investing component) at a VC firm.
   2. Chief of Staff to a CEO/founder at a Series A-C startup, if the scope is strategic
      (fundraising, board materials, operating cadence, special projects), not executive assistant work.
-  3. Strategic Finance / FP&A / Corporate Development / BizOps at a venture-backed startup, ideally
+  3. Strategic Finance / Corporate Development / BizOps at a venture-backed startup, ideally
      where fundraising, capital strategy, or investor relations is part of the job.
   4. Founder's Associate / special projects / office-of-the-CEO roles.
-- Sector tilt (a plus, not a requirement): climate and energy, hardware and advanced manufacturing,
+- Sector tilt (a plus, not a requirement): built environment, climate and energy, hardware and advanced manufacturing,
   industrial tech, applied AI, fintech. Hardware/project-finance capital stack experience is a differentiator.
-- Seniority: post-MBA level, roughly 6 years of experience. Manager / Senior Associate / Lead level is the
+- Seniority: post-MBA level, roughly 6 years of experience. Associate / Senior Associate / Lead level is the
   sweet spot; VP-level only at small companies; analyst / entry-level roles are a poor fit.
 
 ## Not interested in
