@@ -246,6 +246,12 @@ def _drop_default_sheet(gs: GSheet):
 
 
 # --------------------------------------------------------------------------- weekly sync
+def job_count(gs: GSheet) -> int:
+    """Rows that hold a job. Rows below the data can contain unchecked checkboxes (FALSE), so
+    count by Title rather than by raw row count."""
+    return sum(1 for r in gs.values(JOBS_TAB)[1:] if len(r) > J["Title"] and r[J["Title"]].strip())
+
+
 def job_row(j: Job, today: str) -> list:
     boards = [j.source] + j.also_on
     investors = [f for f in j.funds if f not in boards][:5]
@@ -254,12 +260,14 @@ def job_row(j: Job, today: str) -> list:
             _safe(j.location_text()), _safe(j.salary), _safe(inv), _safe(j.reason), j.url, "", False, "", j.uid]
 
 
-def add_jobs(gs: GSheet, jobs: list[Job], today: str) -> int:
-    """Insert new jobs at the top of the Jobs tab, best score first. Skips jobs already present."""
+def add_jobs(gs: GSheet, jobs: list[Job], today: str, added: dict[str, str] | None = None) -> int:
+    """Insert new jobs at the top of the Jobs tab, best score first. Skips jobs already present.
+    `added` optionally maps job uid -> the date it was first reported (used when backfilling)."""
     existing = {r[J["Job ID"]] for r in gs.values(JOBS_TAB)[1:] if len(r) > J["Job ID"]}
     fresh = [j for j in jobs if j.uid not in existing]
     fresh.sort(key=lambda j: -(j.score or 0))
-    gs.insert_top(JOBS_TAB, [job_row(j, today) for j in fresh])
+    added = added or {}
+    gs.insert_top(JOBS_TAB, [job_row(j, added.get(j.uid, today)) for j in fresh])
     if fresh:
         gs.batch(validation_requests(gs))  # make sure new rows carry the dropdown/checkbox
     return len(fresh)

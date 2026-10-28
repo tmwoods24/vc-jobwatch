@@ -25,8 +25,14 @@ class FakeGSheet(sheets.GSheet):
             self.tabs[title] = FakeWS(title, len(self.tabs) + 1)
         return self.tabs[title]
 
+    pad_checkboxes = 0  # set > 0 to mimic Google: blank rows under the data read back as unchecked boxes
+
     def values(self, title):
-        return [[("TRUE" if v is True else "FALSE" if v is False else str(v)) for v in r] for r in self.ws(title).rows]
+        rows = [[("TRUE" if v is True else "FALSE" if v is False else str(v)) for v in r] for r in self.ws(title).rows]
+        if title == "Jobs" and self.pad_checkboxes and rows:
+            blank = [""] * J["Applied"] + ["FALSE"]
+            rows = rows + [list(blank) for _ in range(self.pad_checkboxes)]
+        return rows
 
     def insert_top(self, title, rows):
         ws = self.ws(title)
@@ -132,3 +138,29 @@ def test_backfill_honors_first_run_since(tmp_path, monkeypatch):
     assert scored == ["New Co"]                      # unscored job got scored during backfill
     m.backfill_sheet(gs, {"first_run_since": "2026-10-01"})   # no-op once the tab has rows
     assert len(gs.values("Jobs")) == 2
+
+
+def test_backfill_with_checkbox_padding_merges_reports(tmp_path, monkeypatch):
+    """Regression: Google returns FALSE for every empty checkbox row, which made the tab look non-empty."""
+    import json
+    import jobwatch.__main__ as m
+    (tmp_path / "reports").mkdir()
+    a = job(1, "Chief of Staff", "Kinstead", score=None).to_dict() | {"posted": "2026-10-05"}
+    b = job(2, "Strategic Finance Lead", "Reflection").to_dict() | {"posted": "2026-10-10"}
+    (tmp_path / "reports" / "2026-10-27.json").write_text(json.dumps([a, b]))
+    a2 = dict(a, score=8, reason="Strategic CoS")              # scored in the later report
+    c = job(3, "Venture Associate", "Lux").to_dict() | {"posted": "2026-10-20"}
+    (tmp_path / "reports" / "2026-10-28.json").write_text(json.dumps([a2, b, c]))
+    monkeypatch.setattr(m, "ROOT", tmp_path)
+    monkeypatch.setattr(m, "score_jobs", lambda *a, **k: None)
+    gs = FakeGSheet()
+    gs.pad_checkboxes = 4999
+    sheets.setup(gs)
+    assert sheets.job_count(gs) == 0
+    m.backfill_sheet(gs, {"first_run_since": "2026-10-01", "scoring": {"enabled": True}})
+    rows = [r for r in gs.values("Jobs")[1:] if r[J["Title"]]]
+    assert sorted(r[J["Company"]] for r in rows) == ["Kinstead", "Lux", "Reflection"]   # each job once
+    kin = [r for r in rows if r[J["Company"]] == "Kinstead"][0]
+    assert kin[J["Score"]] == "8" and kin[J["Added"]] == "2026-10-27"   # scored copy, first-seen date
+    m.backfill_sheet(gs, {})                                            # no-op once jobs exist
+    assert sheets.job_count(gs) == 3

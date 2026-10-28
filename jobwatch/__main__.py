@@ -138,23 +138,36 @@ def ensure_setup(gs) -> None:
 
 
 def backfill_sheet(gs, cfg: dict | None = None) -> None:
-    """If the Jobs tab is empty, load earlier reports (reports/<date>.json) so past jobs can be rated too.
-    Honors `first_run_since`, and scores any jobs the earlier run left unscored (when an API key is set)."""
-    if len(gs.values(sheets.JOBS_TAB)) > 1:
+    """If the Jobs tab has no jobs yet, load earlier reports (reports/<date>.json) so past jobs can be
+    rated too. Merges every report (keeping the scored copy of each job and the date it was first
+    reported), honors `first_run_since`, and scores leftovers when an API key is set."""
+    if sheets.job_count(gs) > 0:
         return
     cfg = cfg or {}
     since = str(cfg.get("first_run_since") or "")
+    by_uid: dict[str, Job] = {}
+    first_seen: dict[str, str] = {}
     for path in sorted((ROOT / "reports").glob("20*.json")):
-        jobs = [Job(**d) for d in json.loads(path.read_text())]
-        if since:
-            jobs = [j for j in jobs if not j.posted or j.posted >= since]
-        unscored = [j for j in jobs if j.score is None]
-        if unscored and cfg.get("scoring", {}).get("enabled"):
-            profile_path = ROOT / cfg["scoring"].get("profile_file", "profile.md")
-            score_cfg = dict(cfg, scoring=dict(cfg["scoring"], max_jobs=len(unscored)))
-            score_jobs(unscored, score_cfg, profile_path.read_text() if profile_path.exists() else "")
-        n = sheets.add_jobs(gs, jobs, path.stem)
-        log.info("Tracker: backfilled %d jobs from %s", n, path.name)
+        for d in json.loads(path.read_text()):
+            job = Job(**d)
+            first_seen.setdefault(job.uid, path.stem)
+            if job.uid not in by_uid or job.score is not None:
+                by_uid[job.uid] = job
+    jobs = [j for j in by_uid.values() if not since or not j.posted or j.posted >= since]
+    if not jobs:
+        return
+    unscored = [j for j in jobs if j.score is None]
+    if unscored and cfg.get("scoring", {}).get("enabled"):
+        profile_path = ROOT / cfg["scoring"].get("profile_file", "profile.md")
+        score_cfg = dict(cfg, scoring=dict(cfg["scoring"], max_jobs=len(unscored)))
+        log.info("Tracker: scoring %d previously unscored jobs", len(unscored))
+        score_jobs(unscored, score_cfg, profile_path.read_text() if profile_path.exists() else "")
+    n = sheets.add_jobs(gs, jobs, today_iso(), added=first_seen)
+    log.info("Tracker: backfilled %d jobs from %d earlier report(s)", n, len(set(first_seen.values())))
+
+
+def today_iso() -> str:
+    return dt.date.today().isoformat()
 
 
 def sync_cmd(args) -> int:
