@@ -5,6 +5,7 @@
   python -m jobwatch run --dry-run       # don't update data/seen.json (safe for testing)
   python -m jobwatch run --only FirstMark --only "Lux Capital"
   python -m jobwatch run --all           # ignore seen.json and report every current match
+  python -m jobwatch sync [--setup]      # copy "Applied" ticks to the Applications tab (daily job)
 """
 from __future__ import annotations
 
@@ -17,9 +18,11 @@ from pathlib import Path
 
 import yaml
 
+from . import sheets
 from .emailer import send_report
 from .filters import JobFilter, dedupe
 from .http import Throttle, make_session
+from .models import Job
 from .report import build_html, build_text
 from .scoring import score_jobs
 from .sources import FETCHERS
@@ -55,6 +58,16 @@ def run(args) -> int:
 
     matched = dedupe(matched)
     new = matched if args.all else [j for j in matched if store.is_new(j)]
+
+    # First run (empty history): only report jobs posted on/after `first_run_since`.
+    # Older matches are still remembered below, so they never show up in later weeks.
+    since = args.since or (str(cfg.get("first_run_since") or "") if store.is_empty() else "")
+    period = "since last week"
+    if since:
+        new = [j for j in new if not j.posted or j.posted >= since]
+        d0 = dt.date.fromisoformat(since)
+        period = f"posted since {d0:%b} {d0.day}"
+        log.info("Limiting report to jobs posted on/after %s", since)
     by_src = {}
     for j in new:
         by_src[j.source] = by_src.get(j.source, 0) + 1
@@ -62,11 +75,35 @@ def run(args) -> int:
         h["new"] = by_src.get(h["name"], 0)
     log.info("%d matching roles, %d new", len(matched), len(new))
 
+    # Tracker: pick up your "Applied" ticks and ratings before scoring, so the scorer learns from them.
+    gs, feedback, fb_counts = None, "", {}
+    if not args.no_sheet:
+        try:
+            gs = sheets.GSheet.from_env()
+            if gs:
+                ensure_setup(gs)
+                moved = sheets.sync_applied(gs, today)
+                fb = sheets.read_feedback(gs)
+                feedback, fb_counts = sheets.feedback_prompt(fb), sheets.feedback_counts(fb)
+                log.info("Tracker: %d newly applied copied; learning from %s", moved, fb_counts)
+        except Exception as e:
+            log.error("Google Sheet unavailable: %s", e)
+            gs = None
+
     if new and cfg.get("scoring", {}).get("enabled") and not args.no_score:
         profile_path = ROOT / cfg["scoring"].get("profile_file", "profile.md")
-        score_jobs(new, cfg, profile_path.read_text() if profile_path.exists() else "")
+        score_jobs(new, cfg, profile_path.read_text() if profile_path.exists() else "", feedback)
 
-    html_out = build_html(new, health, cfg, today)
+    if gs and not args.dry_run:
+        try:
+            backfill_sheet(gs, cfg)
+            added = sheets.add_jobs(gs, new, today)
+            log.info("Tracker: added %d jobs to the Jobs tab", added)
+        except Exception as e:
+            log.error("Could not add jobs to the sheet: %s", e)
+
+    html_out = build_html(new, health, cfg, today, period=period,
+                          sheet_url=sheets.sheet_url() if gs else None, learning=fb_counts)
     text_out = build_text(new, cfg)
     out_dir = ROOT / cfg.get("report", {}).get("output_dir", "reports")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -85,12 +122,54 @@ def run(args) -> int:
 
     if not args.dry_run:
         store.touch(matched, today)
-        store.mark(new, today)
+        store.mark(matched if since else new, today)
         store.prune(today)
         store.save()
 
     if all(h.get("error") for h in health):
         return 1  # every board failed: make the scheduled run show as failed
+    return 0
+
+
+def ensure_setup(gs) -> None:
+    rows = gs.values(sheets.JOBS_TAB)
+    if not rows or rows[0][:3] != sheets.JOBS_HEADERS[:3]:
+        sheets.setup(gs)
+
+
+def backfill_sheet(gs, cfg: dict | None = None) -> None:
+    """If the Jobs tab is empty, load earlier reports (reports/<date>.json) so past jobs can be rated too.
+    Honors `first_run_since`, and scores any jobs the earlier run left unscored (when an API key is set)."""
+    if len(gs.values(sheets.JOBS_TAB)) > 1:
+        return
+    cfg = cfg or {}
+    since = str(cfg.get("first_run_since") or "")
+    for path in sorted((ROOT / "reports").glob("20*.json")):
+        jobs = [Job(**d) for d in json.loads(path.read_text())]
+        if since:
+            jobs = [j for j in jobs if not j.posted or j.posted >= since]
+        unscored = [j for j in jobs if j.score is None]
+        if unscored and cfg.get("scoring", {}).get("enabled"):
+            profile_path = ROOT / cfg["scoring"].get("profile_file", "profile.md")
+            score_cfg = dict(cfg, scoring=dict(cfg["scoring"], max_jobs=len(unscored)))
+            score_jobs(unscored, score_cfg, profile_path.read_text() if profile_path.exists() else "")
+        n = sheets.add_jobs(gs, jobs, path.stem)
+        log.info("Tracker: backfilled %d jobs from %s", n, path.name)
+
+
+def sync_cmd(args) -> int:
+    """Daily: copy ticked jobs into Applications. No fetching, no email."""
+    gs = sheets.GSheet.from_env()
+    if not gs:
+        log.error("Set GOOGLE_SERVICE_ACCOUNT_JSON and SHEET_ID")
+        return 1
+    cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
+    ensure_setup(gs)
+    if args.setup:
+        sheets.setup(gs)
+    backfill_sheet(gs, cfg)
+    n = sheets.sync_applied(gs, dt.date.today().isoformat())
+    log.info("Copied %d newly applied jobs to Applications", n)
     return 0
 
 
@@ -104,11 +183,16 @@ def main(argv=None) -> int:
     r.add_argument("--dry-run", action="store_true", help="don't update data/seen.json")
     r.add_argument("--all", action="store_true", help="report every current match, not just new ones")
     r.add_argument("--only", action="append", help="limit to a source name (repeatable)")
+    r.add_argument("--since", help="only report jobs posted on/after this date (YYYY-MM-DD)")
+    r.add_argument("--no-sheet", action="store_true", help="skip the Google Sheet tracker")
     r.add_argument("-v", "--verbose", action="store_true")
+    sy = sub.add_parser("sync", help="copy jobs ticked 'Applied' into the Applications tab")
+    sy.add_argument("--setup", action="store_true", help="(re)create tabs, dropdowns and dashboard first")
+    sy.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s", stream=sys.stdout)
-    return run(args)
+    return run(args) if args.cmd == "run" else sync_cmd(args)
 
 
 if __name__ == "__main__":

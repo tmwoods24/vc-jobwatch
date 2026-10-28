@@ -10,7 +10,9 @@ boards ──► fetch (official JSON endpoints each site's own page uses)
        ──► filter: NYC / US-remote + target titles (config.yaml)
        ──► dedupe across boards ──► drop anything already reported (data/seen.json)
        ──► Claude scores fit 1-10 vs profile.md
-       ──► HTML email + reports/<date>.html
+       ──► HTML email + reports/<date>.html + rows in your Google Sheet tracker
+                 ▲                                         │
+                 └──── your 👍/👎 ratings and notes ◄──────┘  (the scorer learns from them)
 ```
 
 See `docs/sample-report.html` for what the email looks like.
@@ -46,11 +48,51 @@ If a board breaks, the email names it at the bottom and the other boards still r
    | `EMAIL_TO` | where the report goes (optional; defaults to `SMTP_USER`) |
 
 3. **Edit `profile.md`**. The scorer reads it word for word, so be specific about what you do and don't want.
-4. **Run it once by hand**: Actions tab → "Weekly job watch" → Run workflow. Expect the first email
-   to be long, because every current match counts as new. After that you only get jobs posted since the previous run.
+4. **Run it once by hand**: Actions tab → "Weekly job watch" → Run workflow. The first report covers
+   jobs posted since `first_run_since` (Oct 1, 2026 in `config.yaml`). Older matches are remembered silently,
+   so they never appear later. From then on, each Monday email has only the jobs that are new since the previous run.
 
 The schedule is Mondays at 11:43 UTC (6:43am Central). To change it, edit the `cron` line in
 `.github/workflows/weekly.yml`.
+
+## Tracker (Google Sheet)
+
+Every reported job is also added to a Google Sheet with three tabs:
+
+| Tab | Who fills it | What it's for |
+|---|---|---|
+| **Jobs** | the weekly run adds rows, newest on top, best score first | Pick **My fit** (👍 Good fit / 🤔 Maybe / 👎 Not a fit), tick **Applied**, and add a **My note** (e.g. "too junior", "love the sector") |
+| **Applications** | ticked jobs are copied here every morning; you add your own rows for jobs found elsewhere | Keep **Status** current (Applied → Recruiter screen → Interviewing → Final round → Offer / Rejected / Withdrawn / No response), plus next step, date, contact and notes |
+| **Dashboard** | formulas only | Applications by status, response rate, last 7/30 days, upcoming next steps, rating counts |
+
+**How it learns:** before scoring each week, the run reads every rating, your notes, and the applications
+you logged yourself, then passes them to Claude as examples of your own judgment. Your ratings take priority over
+`profile.md` when the two disagree. A "Not a fit" with a note like "too junior" teaches more than a rating alone.
+
+### Tracker setup (about 10 minutes)
+
+1. **Create a blank Google Sheet** (e.g. "Job search tracker"). Copy its ID from the URL:
+   `docs.google.com/spreadsheets/d/`**`<this part>`**`/edit`.
+2. **Create a Google service account** (a robot login the tool uses):
+   - console.cloud.google.com → create a project (any name) → **APIs & Services → Library** → enable
+     **Google Sheets API**.
+   - **APIs & Services → Credentials → Create credentials → Service account**. Give it a name and click
+     **Done**; it needs no roles.
+   - Click the new service account → **Keys → Add key → Create new key → JSON**. A `.json` file downloads.
+3. **Share the sheet with the robot**: open the JSON file, copy the `client_email` value
+   (`…@….iam.gserviceaccount.com`), and share the Google Sheet with that address as **Editor**.
+4. **Add two more repository secrets** on GitHub:
+
+   | Secret | Value |
+   |---|---|
+   | `GOOGLE_SERVICE_ACCOUNT_JSON` | the **entire contents** of the downloaded JSON file |
+   | `SHEET_ID` | the ID from step 1 |
+
+5. **Actions → "Sync tracker" → Run workflow**. This builds the tabs, dropdowns and dashboard, and loads the
+   jobs from earlier reports so you can rate them right away.
+
+Afterwards, the sync runs every morning at about 8:15am Central. Click **Run workflow** to sync right away.
+Delete the JSON key file from your Downloads folder once it's saved as a secret.
 
 ## Run locally
 
@@ -62,7 +104,7 @@ python -m jobwatch run --only FirstMark --no-email --dry-run -v   # test one boa
 python -m pytest -q                       # offline tests
 ```
 
-Flags: `--no-email`, `--no-score`, `--dry-run` (don't update `seen.json`), `--all` (ignore history and report
+Flags: `--since YYYY-MM-DD` (report only jobs posted on/after a date), `--no-email`, `--no-score`, `--dry-run` (don't update `seen.json`), `--all` (ignore history and report
 every current match), `--only NAME` (repeatable).
 
 ## Tuning

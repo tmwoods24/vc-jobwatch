@@ -75,7 +75,9 @@ def bucket(jobs: list[Job], min_score: int) -> dict[str, list[Job]]:
     }
 
 
-def build_html(jobs: list[Job], health: list[dict], cfg: dict, run_date: str | None = None) -> str:
+def build_html(jobs: list[Job], health: list[dict], cfg: dict, run_date: str | None = None,
+               period: str = "since last week", sheet_url: str | None = None,
+               learning: dict | None = None) -> str:
     run_date = run_date or dt.date.today().isoformat()
     min_score = cfg.get("scoring", {}).get("min_score_in_report", 4)
     b = bucket(jobs, min_score)
@@ -93,7 +95,7 @@ def build_html(jobs: list[Job], health: list[dict], cfg: dict, run_date: str | N
         body += (f'<h2 style="font-size:15px;color:{MUTED};margin:28px 0 4px">Low fit ({len(b["low"])})</h2>'
                  f'<ul style="font-size:13px;padding-left:18px;margin:0">{items}</ul>')
     if not jobs:
-        body = f'<p style="color:{MUTED};font-size:15px">No new matching roles this week.</p>'
+        body = f'<p style="color:{MUTED};font-size:15px">No new matching roles {_e(period)}.</p>'
 
     failed = [h for h in health if h.get("error")]
     ok = [h for h in health if not h.get("error")]
@@ -106,7 +108,16 @@ def build_html(jobs: list[Job], health: list[dict], cfg: dict, run_date: str | N
         fail_html = (f'<p style="color:#b3261e;font-size:13px;margin:8px 0 0"><b>Could not read:</b> '
                      + "; ".join(f'{_e(h["name"])} ({_e(h["error"])[:120]})' for h in failed) + "</p>")
 
-    summary = (f"{len(jobs)} new role{'s' if len(jobs) != 1 else ''} since last week across "
+    tracker = ""
+    if sheet_url:
+        n_rated = sum((learning or {}).get(k, 0) for k in ("good", "maybe", "bad"))
+        learn = (f"Scores learned from {n_rated} of your ratings." if n_rated
+                 else "Rate jobs in the tracker and next week's scores will learn from them.")
+        tracker = (f'<div style="margin:14px 0 0"><a href="{_e(sheet_url)}" style="display:inline-block;background:{ACCENT};'
+                   f'color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:9px 16px;border-radius:8px">'
+                   f'Rate &amp; track in your sheet</a>'
+                   f'<span style="color:{MUTED};font-size:13px;margin-left:10px">{_e(learn)}</span></div>')
+    summary = (f"{len(jobs)} new role{'s' if len(jobs) != 1 else ''} {period} across "
                f"{len(ok)} board{'s' if len(ok) != 1 else ''}")
     return f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{_e(title)}: {_e(run_date)}</title></head>
@@ -117,6 +128,7 @@ def build_html(jobs: list[Job], health: list[dict], cfg: dict, run_date: str | N
 <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:{MUTED}">{_e(run_date)}</div>
 <h1 style="font-size:22px;margin:4px 0 6px">{_e(title)}</h1>
 <div style="font-size:14px;color:{MUTED}">{_e(summary)}{' · ranked by Claude fit score' if scored else ''}</div>
+{tracker}
 {body}
 <h2 style="font-size:14px;color:{MUTED};margin:32px 0 6px">Boards checked</h2>
 <table role="presentation" cellpadding="0" cellspacing="0" style="font-size:12px;color:{MUTED}">

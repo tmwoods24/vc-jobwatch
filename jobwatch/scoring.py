@@ -24,7 +24,9 @@ Scoring guide:
  5-6   plausible; worth a glance
  3-4   weak fit (wrong level, mostly sales/admin, unclear NYC)
  1-2   not a fit
-Judge from the title, company and investors; you do not have the full description, so say so when the
+If <my_ratings> is present, it is the candidate's own verdicts on earlier postings: weight it heavily, score
+similar postings the way they rated them, and mention the link briefly when it drives the score
+(e.g. "like the Kinstead CoS you liked"). Judge from the title, company and investors; you do not have the full description, so say so when the
 title is ambiguous (e.g. "Chief of Staff" could be EA-like). Penalize non-NYC postings that are not remote.
 
 Reply with ONLY a JSON array, one object per posting, in input order:
@@ -42,7 +44,7 @@ def _describe(i: int, j: Job) -> str:
     return " | ".join(parts)
 
 
-def score_jobs(jobs: list[Job], cfg: dict, profile: str) -> None:
+def score_jobs(jobs: list[Job], cfg: dict, profile: str, feedback: str = "") -> None:
     sc = cfg.get("scoring", {})
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
@@ -57,7 +59,9 @@ def score_jobs(jobs: list[Job], cfg: dict, profile: str) -> None:
             "model": sc.get("model", "claude-sonnet-5-5"),
             "max_tokens": 4000,
             "system": SYSTEM,
-            "messages": [{"role": "user", "content": f"<profile>\n{profile}\n</profile>\n\n<postings>\n{listing}\n</postings>"}],
+            "messages": [{"role": "user", "content": f"<profile>\n{profile}\n</profile>\n\n"
+                         + (f"<my_ratings>\n{feedback}\n</my_ratings>\n\n" if feedback else "")
+                         + f"<postings>\n{listing}\n</postings>"}],
         }
         try:
             r = requests.post(API_URL, json=body, timeout=120, headers={

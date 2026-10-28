@@ -197,3 +197,30 @@ def test_scoring_parse_and_report():
     html = build_html(jobs, [{"name": "FirstMark", "fetched": 10, "new": 3}, {"name": "X", "error": "boom"}], CFG,
                       "2026-11-02")
     assert "Strategic CoS" in html and "Could not read" in html and "<script" not in html
+
+
+def test_first_run_since_then_weekly(tmp_path, monkeypatch):
+    """First run reports only jobs posted on/after first_run_since; later runs report only unseen jobs."""
+    import argparse
+    import jobwatch.__main__ as m
+
+    root = tmp_path
+    (root / "data").mkdir()
+    cfg = dict(CFG, sources=[{"name": "Fake", "type": "fake", "group": "vc"}],
+               scoring={"enabled": False}, report={"output_dir": "reports"}, first_run_since="2026-10-01")
+    (root / "config.yaml").write_text(yaml.safe_dump(cfg))
+    live = [_job("Chief of Staff", "New York, NY", source="Fake", external_id="old", posted="2026-09-15", company="A"),
+            _job("Strategic Finance Lead", "New York, NY", source="Fake", external_id="oct", posted="2026-10-08", company="B")]
+    monkeypatch.setattr(m, "ROOT", root)
+    monkeypatch.setitem(m.FETCHERS, "fake", lambda src, s, t: list(live))
+    reported = {}
+    monkeypatch.setattr(m, "build_html", lambda jobs, *a, **k: reported.setdefault("jobs", [j.external_id for j in jobs]) and "")
+    args = argparse.Namespace(config="config.yaml", no_email=True, no_score=True, dry_run=False, all=False,
+                              only=None, since=None, verbose=False, no_sheet=True)
+
+    m.run(args)
+    assert reported.pop("jobs") == ["oct"]          # Sept job skipped...
+    live.append(_job("Venture Associate", "New York, NY", source="Fake", external_id="new", posted="2026-11-01",
+                     company="C"))
+    m.run(args)
+    assert reported.pop("jobs") == ["new"]          # ...and never resurfaces; only the new posting shows

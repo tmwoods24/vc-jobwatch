@@ -59,12 +59,15 @@ scoring:
   model: claude-sonnet-5-5
   profile_file: profile.md      # your background + what you want (edit this!)
   batch_size: 20
-  max_jobs: 200                 # safety cap on how many new jobs get scored per run
+  max_jobs: 400                 # safety cap on how many new jobs get scored per run
   min_score_in_report: 4        # jobs scored below this go in a collapsed "low fit" list
 
 report:
   output_dir: reports
   title: "Weekly NYC role watch"
+
+# First run only: report jobs posted on/after this date. Later runs report whatever is new each week.
+first_run_since: 2026-10-01
 
 # How long to remember a job ID after we last saw it (days).
 seen_retention_days: 180

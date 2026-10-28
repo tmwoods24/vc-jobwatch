@@ -16,6 +16,9 @@ class SeenStore:
         if self.path.exists():
             self.data = json.loads(self.path.read_text() or "{}")
 
+    def is_empty(self) -> bool:
+        return not self.data
+
     def is_new(self, job: Job) -> bool:
         # A job counts as seen if either its board ID or its cross-board key was reported before.
         return job.uid not in self.data and f"key:{job.dedupe_key}" not in self.data
