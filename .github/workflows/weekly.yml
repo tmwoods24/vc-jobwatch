@@ -11,6 +11,10 @@ on:
         description: "Report every current match, not just new ones"
         type: boolean
         default: false
+      posted_since:
+        description: "Optional: show every current match posted on/after this date (YYYY-MM-DD), even if reported before"
+        type: string
+        default: ""
 
 permissions:
   contents: write           # lets the run commit data/seen.json and the report back
@@ -41,7 +45,10 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
-        run: python -m jobwatch run ${{ inputs.report_all && '--all' || '' }}
+        run: >-
+          python -m jobwatch run
+          ${{ inputs.report_all && '--all' || '' }}
+          ${{ inputs.posted_since && format('--all --since {0}', inputs.posted_since) || '' }}
 
       - name: Save what we've seen
         if: always()

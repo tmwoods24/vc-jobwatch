@@ -224,3 +224,24 @@ def test_first_run_since_then_weekly(tmp_path, monkeypatch):
                      company="C"))
     m.run(args)
     assert reported.pop("jobs") == ["new"]          # ...and never resurfaces; only the new posting shows
+
+
+def test_posted_since_reports_seen_jobs_in_window(tmp_path, monkeypatch):
+    """--all --since: re-show already-reported jobs posted in the window; nothing older."""
+    import argparse
+    import jobwatch.__main__ as m
+
+    (tmp_path / "data").mkdir()
+    cfg = dict(CFG, sources=[{"name": "Fake", "type": "fake", "group": "vc"}],
+               scoring={"enabled": False}, report={"output_dir": "reports"}, first_run_since="2026-10-01")
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump(cfg))
+    live = [_job("Chief of Staff", "New York, NY", source="Fake", external_id="a", posted="2026-10-15", company="A"),
+            _job("Strategic Finance Lead", "New York, NY", source="Fake", external_id="b", posted="2026-10-24", company="B")]
+    monkeypatch.setattr(m, "ROOT", tmp_path)
+    monkeypatch.setitem(m.FETCHERS, "fake", lambda src, s, t: list(live))
+    seen = []
+    monkeypatch.setattr(m, "build_html", lambda jobs, *a, **k: seen.append(sorted(j.external_id for j in jobs)) or "")
+    base = dict(config="config.yaml", no_email=True, no_score=True, dry_run=False, only=None, verbose=False, no_sheet=True)
+    m.run(argparse.Namespace(**base, all=False, since=None))       # first run reports both
+    m.run(argparse.Namespace(**base, all=True, since=m._iso_date("2026-10-22")))
+    assert seen == [["a", "b"], ["b"]]

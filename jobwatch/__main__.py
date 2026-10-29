@@ -186,6 +186,13 @@ def sync_cmd(args) -> int:
     return 0
 
 
+def _iso_date(s: str) -> str:
+    try:
+        return dt.date.fromisoformat(s.strip()).isoformat()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{s}' is not a date like 2026-10-22")
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="jobwatch")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -196,7 +203,7 @@ def main(argv=None) -> int:
     r.add_argument("--dry-run", action="store_true", help="don't update data/seen.json")
     r.add_argument("--all", action="store_true", help="report every current match, not just new ones")
     r.add_argument("--only", action="append", help="limit to a source name (repeatable)")
-    r.add_argument("--since", help="only report jobs posted on/after this date (YYYY-MM-DD)")
+    r.add_argument("--since", type=_iso_date, help="only report jobs posted on/after this date (YYYY-MM-DD)")
     r.add_argument("--no-sheet", action="store_true", help="skip the Google Sheet tracker")
     r.add_argument("-v", "--verbose", action="store_true")
     sy = sub.add_parser("sync", help="copy jobs ticked 'Applied' into the Applications tab")

@@ -52,6 +52,11 @@ If a board breaks, the email names it at the bottom and the other boards still r
    jobs posted since `first_run_since` (Oct 1, 2026 in `config.yaml`). Older matches are remembered silently,
    so they never appear later. From then on, each Monday email has only the jobs that are new since the previous run.
 
+**One-off catch-up run:** Actions → "Weekly job watch" → Run workflow, and fill in **posted_since**
+(e.g. `2026-10-22`). The email then lists every current match posted on or after that date, even jobs reported
+before. In the tracker, jobs already on the Jobs tab are skipped (your ratings stay as they are); only jobs
+not yet there are added at the top.
+
 The schedule is Mondays at 11:43 UTC (6:43am Central). To change it, edit the `cron` line in
 `.github/workflows/weekly.yml`.
 
