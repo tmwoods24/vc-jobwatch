@@ -28,8 +28,9 @@ titles:
     - 'special projects|office of the (ceo|founder|president|cfo)'
     - 'head of (finance|operations|strategy|business)'
     - 'investor relations|capital markets|fundrais|project finance|structured finance|capital formation'
-    - '\bventure\b|\binvestment|investor|principal\b|\bplatform\b.*(venture|investment)'
+    - '\bventure\b|\bvc\b|\binvestment|investor|principal\b|\bplatform\b.*(venture|investment)'
     - 'business development|partnerships|commercial strategy'
+    - '\baccelerator\b|\bincubator\b|ecosystem'
     - '\bgeneral manager\b|\bgm\b'
     - 'finance (manager|lead|director)|director,? (of )?finance|vp,? finance'
   # Core targets: kept even if they also hit an `exclude` word (e.g. "Chief of Staff, Clinical"),
@@ -39,6 +40,7 @@ titles:
     - "founder'?s associate|founders associate"
     - 'strategic finance'
     - '\bventure (associate|investor|partner|fellow)|investment (associate|analyst|manager)'
+    - '\bvc\b'                      # any "VC ..." role (Venture5 titles), unless hard-excluded
   hard_exclude:
     - 'intern\b|internship|co-?op\b|executive assistant'
   exclude:
@@ -105,6 +107,10 @@ sources:
   - {name: Breakthrough Energy Ventures, type: getro,  domain: bevjobs.breakthroughenergy.org, group: vc}
   - {name: The Engine,                 type: getro,    domain: jobs.engine.xyz, group: vc}
   - {name: Prelude Ventures,           type: getro,    domain: jobs.preludeventures.com, group: vc}
+
+  # --- Roles AT venture firms (not portfolio companies). Listings stay up for months, so only
+  #     jobs posted in the last `max_age_days` are considered.
+  - {name: Venture5, type: wpjobmanager, domain: venture5.com, max_age_days: 30, group: vc}
 
   # --- Broad aggregator (all VC-backed startups). Categories: ops, leadership, sales, tech, autre
   - {name: Traction, type: traction, domain: tractionjobs.com, categories: [ops, leadership], group: aggregator}

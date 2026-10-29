@@ -245,3 +245,32 @@ def test_posted_since_reports_seen_jobs_in_window(tmp_path, monkeypatch):
     m.run(argparse.Namespace(**base, all=False, since=None))       # first run reports both
     m.run(argparse.Namespace(**base, all=True, since=m._iso_date("2026-10-22")))
     assert seen == [["a", "b"], ["b"]]
+
+
+def test_venture5_wpjobmanager(monkeypatch):
+    import datetime as dt
+    from jobwatch.sources import wpjobmanager as w
+    frag = (ROOT / "tests" / "fixtures" / "venture5_listings.html").read_text()
+    calls = []
+
+    def h(method, url, kw):
+        calls.append(kw["data"]["search_location"])
+        assert url == "https://venture5.com/jobs/".replace("/jobs/", "/jm-ajax/get_listings/")
+        return Resp({"found_jobs": True, "max_num_pages": 1, "html": frag})
+
+    class D(dt.date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 10, 29)
+    monkeypatch.setattr(w.dt, "date", D)
+    src = {"name": "Venture5", "type": "wpjobmanager", "domain": "venture5.com", "max_age_days": 30, "group": "vc"}
+    jobs = w.fetch_wpjobmanager(src, FakeSession(h), Throttle(0))
+    assert calls == ["New York", "Remote"]
+    assert [(j.title, j.company, j.posted) for j in jobs] == [
+        ("VC Analyst", "Corient", "2026-10-27"), ("VC Associate", "Companyon Ventures", "2026-10-22")]  # BVP too old
+    assert jobs[1].tags == ["Full Time"] and jobs[0].external_id == "65512"
+    f = JobFilter(CFG)
+    assert all(f(j) for j in jobs)                                   # "VC ..." titles pass the title filter
+    assert not f(_job("VC AI Engineering Internship", "Remote", remote=True))
+    assert f(_job("Associate VC Director (Therapeutics)", "New York City, NY"))   # VC beats "therap" exclude
+    assert f(_job("Accelerator Program Analyst", "Remote", remote=True))

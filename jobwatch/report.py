@@ -7,7 +7,7 @@ import re
 
 from .models import Job
 
-INVESTING = re.compile(r"\bventure|\binvestment (associate|analyst|manager|principal|team)|\binvesting\b|\binvestor\b(?! relations)|portfolio (operations|support|talent|success)|\bplatform (associate|manager|lead|director)", re.I)
+INVESTING = re.compile(r"\bventure|\bvc\b|\binvestment (associate|analyst|manager|principal|team)|\binvesting\b|\binvestor\b(?! relations)|portfolio (operations|support|talent|success)|\bplatform (associate|manager|lead|director)", re.I)
 
 INK = "#1d1d1f"
 MUTED = "#6e6e73"
